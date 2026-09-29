@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poster Location</title>
+<style>
+  :root {
+    --accent: #9B4B63;
+    --accent-dark: #7d3c50;
+    --text: #3b4351;
+    --muted: #66758c;
+    --border: #d5d9e0;
+    --bg: #ffffff;
+    --soft: #f5f2f4;
+    --error: #c0392b;
+    --ok: #2e7d4f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--text);
+    background: var(--bg);
+  }
+  body.setup { padding: 0 4px 8px; }
+  main { max-width: 440px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  body.setup h1 { display: none; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  label { display: block; font-weight: 600; font-size: 0.9rem; margin: 12px 0 4px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    font: inherit;
+    color: inherit;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { opacity: 0.6; cursor: default; }
+  button.link {
+    background: none;
+    color: var(--accent);
+    padding: 0;
+    font-weight: 500;
+    text-decoration: underline;
+  }
+  .row { display: flex; gap: 8px; }
+  .row input { flex: 1; min-width: 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .current {
+    background: var(--soft);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .current strong { display: block; }
+  ul.results { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  ul.results:empty { display: none; }
+  ul.results li + li { border-top: 1px solid var(--border); }
+  ul.results button {
+    width: 100%;
+    text-align: left;
+    background: #fff;
+    color: var(--text);
+    font-weight: 400;
+    border-radius: 0;
+    padding: 10px 12px;
+  }
+  ul.results button:hover, ul.results button[aria-pressed="true"] { background: var(--soft); }
+  ul.results .place { font-weight: 600; }
+  ul.results .detail { color: var(--muted); font-size: 0.85rem; }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+  .save { width: 100%; margin-top: 20px; }
+  .status { margin-top: 8px; font-size: 0.95rem; }
+  .status:empty { margin: 0; }
+  .status.error { color: var(--error); }
+  .status.ok { color: var(--ok); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Poster location</h1>
+  <p class="muted" id="intro">The poster shows the weather for this location.</p>
+
+  <!-- Shown when there's no valid login session from the setup wizard or console -->
+  <form id="login" hidden>
+    <p>Log in to your Weather Poster to change its location.</p>
+    <label for="username">Username</label>
+    <input id="username" autocomplete="username" value="root">
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button class="save" type="submit">Log in</button>
+    <div class="status" id="login-status" role="status"></div>
+  </form>
+
+  <form id="location" hidden>
+    <div class="current" id="current" hidden>
+      <span class="muted">Current location</span>
+      <strong id="current-name"></strong>
+      <span class="muted" id="current-detail"></span>
+    </div>
+
+    <label for="search">Search for your city or ZIP code</label>
+    <div class="row">
+      <input id="search" type="search" placeholder="e.g. Falls Church" autocomplete="off">
+      <button type="button" id="search-btn">Search</button>
+    </div>
+    <div class="status" id="search-status" role="status"></div>
+    <ul class="results" id="results"></ul>
+
+    <details id="manual">
+      <summary>Enter coordinates instead</summary>
+      <div class="grid">
+        <div>
+          <label for="lat">Latitude</label>
+          <input id="lat" inputmode="decimal" placeholder="38.8823">
+        </div>
+        <div>
+          <label for="lon">Longitude</label>
+          <input id="lon" inputmode="decimal" placeholder="-77.1711">
+        </div>
+      </div>
+      <label for="tz">Time zone</label>
+      <input id="tz" list="tz-list" placeholder="America/New_York" autocomplete="off">
+      <datalist id="tz-list"></datalist>
+      <p class="muted" style="margin-top:6px">Tip: right-click a spot in Google Maps to copy its coordinates.</p>
+    </details>
+
+    <button class="save" type="submit" id="save">Save location</button>
+    <div class="status" id="save-status" role="status"></div>
+  </form>
+</main>
+
+<script>
+(function () {
+  var CONFIG_PATH = '/root/.config.txt';
+  var TOKEN_KEY = '_onion_console_session_token';
+  var DEFAULT_TOKEN = '00000000000000000000000000000000';
+  var LOCATION_KEYS = ['latitude', 'longitude', 'timezone', 'location_name'];
+
+  var token = null;
+  try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
+  if (!token) token = DEFAULT_TOKEN;
+
+  var configText = '';
+  var chosenName = '';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // In the setup wizard the page sits in an iframe, grow it to fit so there's no scrolling inside it
+  if (/[?&]setup=1/.test(location.search)) {
+    document.body.classList.add('setup');
+    var frame = null;
+    try { frame = window.frameElement; } catch (e) {}
+    if (frame) {
+      var fit = function () { frame.style.height = (document.querySelector('main').offsetHeight + 16) + 'px'; };
+      if (window.ResizeObserver) new ResizeObserver(fit).observe(document.querySelector('main'));
+      else setInterval(fit, 500);
+      fit();
+    }
+  }
+
+  function setStatus(id, text, kind) {
+    var el = $(id);
+    el.textContent = text || '';
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  // JSON-RPC call to the Omega's ubus, the same way the setup wizard does
+  function ubus(object, method, params) {
+    return fetch('/ubus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'call', params: [token, object, method, params || {}] })
+    }).then(function (r) { return r.json(); }).then(function (resp) {
+      if (resp.error) throw { code: resp.error.code, message: resp.error.message };
+      if (!resp.result || resp.result[0] !== 0) throw { code: resp.result ? resp.result[0] : -1 };
+      return resp.result[1] || {};
+    });
+  }
+
+  function isAccessDenied(err) {
+    // -32002 is ubus "access denied", 6 is UBUS_STATUS_PERMISSION_DENIED
+    return err && (err.code === -32002 || err.code === 6);
+  }
+
+  function parseConfig(text) {
+    var settings = {};
+    text.split('\n').forEach(function (line) {
+      var i = line.indexOf('=');
+      if (i > 0) settings[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+    });
+    return settings;
+  }
+
+  // Keeps every other line (the MaxMind account lines) and replaces the location lines
+  function buildConfig(text, loc) {
+    var lines = text.split('\n').filter(function (line) {
+      var i = line.indexOf('=');
+      return !(i > 0 && LOCATION_KEYS.indexOf(line.slice(0, i).trim().toLowerCase()) !== -1);
+    });
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+    lines.push('latitude=' + loc.latitude);
+    lines.push('longitude=' + loc.longitude);
+    lines.push('timezone=' + loc.timezone);
+    if (loc.name) lines.push('location_name=' + loc.name.replace(/[\r\n]/g, ' '));
+    return lines.join('\n') + '\n';
+  }
+
+  function showCurrent(settings) {
+    if (!settings.latitude || !settings.longitude) { $('current').hidden = true; return; }
+    $('current').hidden = false;
+    $('current-name').textContent = settings.location_name || (settings.latitude + ', ' + settings.longitude);
+    $('current-detail').textContent = (settings.location_name ? settings.latitude + ', ' + settings.longitude + ' · ' : '') + (settings.timezone || 'no time zone set');
+  }
+
+  function loadConfig() {
+    return ubus('file', 'read', { path: CONFIG_PATH }).then(function (resp) {
+      configText = resp.data || '';
+    }, function (err) {
+      if (isAccessDenied(err)) throw err;
+      configText = ''; // file doesn't exist yet
+    }).then(function () {
+      var settings = parseConfig(configText);
+      showCurrent(settings);
+      $('lat').value = settings.latitude || '';
+      $('lon').value = settings.longitude || '';
+      $('tz').value = settings.timezone || '';
+      chosenName = settings.location_name || '';
+      $('login').hidden = true;
+      $('location').hidden = false;
+    });
+  }
+
+  function showLogin() {
+    $('location').hidden = true;
+    $('login').hidden = false;
+    $('password').focus();
+  }
+
+  $('login').addEventListener('submit', function (e) {
+    e.preventDefault();
+    setStatus('login-status', 'Logging in…');
+    token = DEFAULT_TOKEN;
+    ubus('session', 'login', { username: $('username').value, password: $('password').value }).then(function (resp) {
+      token = resp.ubus_rpc_session;
+      try { sessionStorage.setItem(TOKEN_KEY, token); } catch (err) {}
+      setStatus('login-status', '');
+      return loadConfig();
+    }).catch(function () {
+      setStatus('login-status', 'That username or password didn’t work.', 'error');
+    });
+  });
+
+  // City search using Open-Meteo's free geocoding service (runs in the browser)
+  function search() {
+    var q = $('search').value.trim();
+    if (q.length < 2) { setStatus('search-status', 'Type at least 2 letters.', 'error'); return; }
+    setStatus('search-status', 'Searching…');
+    $('results').innerHTML = '';
+    fetch('https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var places = data.results || [];
+        if (!places.length) { setStatus('search-status', 'No places found. Try a nearby city, or enter coordinates below.', 'error'); return; }
+        setStatus('search-status', 'Choose your location:');
+        places.forEach(function (p) {
+          var region = [p.admin1, p.country].filter(Boolean).join(', ');
+          var li = document.createElement('li');
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.setAttribute('aria-pressed', 'false');
+          var place = document.createElement('div');
+          place.className = 'place';
+          place.textContent = p.name + (region ? ', ' + region : '');
+          var detail = document.createElement('div');
+          detail.className = 'detail';
+          detail.textContent = p.latitude.toFixed(4) + ', ' + p.longitude.toFixed(4) + ' · ' + (p.timezone || '');
+          b.appendChild(place);
+          b.appendChild(detail);
+          b.addEventListener('click', function () {
+            Array.prototype.forEach.call($('results').querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', 'false'); });
+            b.setAttribute('aria-pressed', 'true');
+            $('lat').value = p.latitude.toFixed(4);
+            $('lon').value = p.longitude.toFixed(4);
+            $('tz').value = p.timezone || '';
+            chosenName = p.name + (p.admin1 ? ', ' + p.admin1 : '') + (p.country_code ? ', ' + p.country_code : '');
+            setStatus('search-status', 'Selected ' + place.textContent + '. Press Save location.', 'ok');
+          });
+          li.appendChild(b);
+          $('results').appendChild(li);
+        });
+      })
+      .catch(function () {
+        setStatus('search-status', 'Couldn’t reach the search service. Check your internet connection, or enter coordinates below.', 'error');
+        $('manual').open = true;
+      });
+  }
+  $('search-btn').addEventListener('click', search);
+  $('search').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+
+  // Typing coordinates by hand means the saved name no longer applies
+  ['lat', 'lon', 'tz'].forEach(function (id) {
+    $(id).addEventListener('input', function () { chosenName = ''; });
+  });
+
+  // Time zone suggestions
+  (function () {
+    var zones = [];
+    try { zones = Intl.supportedValuesOf('timeZone'); } catch (e) {}
+    var frag = document.createDocumentFragment();
+    zones.forEach(function (z) { var o = document.createElement('option'); o.value = z; frag.appendChild(o); });
+    $('tz-list').appendChild(frag);
+  })();
+
+  function validTimeZone(tz) {
+    if (!/^[A-Za-z]+(\/[A-Za-z0-9_+\-]+)+$|^UTC$/.test(tz)) return false;
+    try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch (e) { return false; }
+  }
+
+  $('location').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var lat = parseFloat($('lat').value), lon = parseFloat($('lon').value), tz = $('tz').value.trim();
+    if (!$('lat').value.trim() && !$('lon').value.trim()) {
+      setStatus('save-status', 'Search for your city and choose it from the list first.', 'error');
+      return;
+    }
+    if (!(lat >= -90 && lat <= 90) || !(lon >= -180 && lon <= 180)) {
+      $('manual').open = true;
+      setStatus('save-status', 'Latitude must be between -90 and 90, and longitude between -180 and 180.', 'error');
+      return;
+    }
+    if (!validTimeZone(tz)) {
+      $('manual').open = true;
+      setStatus('save-status', 'Enter a time zone like America/New_York.', 'error');
+      return;
+    }
+    var loc = { latitude: +lat.toFixed(4), longitude: +lon.toFixed(4), timezone: tz, name: chosenName };
+    $('save').disabled = true;
+    setStatus('save-status', 'Saving…');
+    // Re-read first so we don't overwrite changes made since the page loaded
+    ubus('file', 'read', { path: CONFIG_PATH }).then(function (resp) { return resp.data || ''; }, function (err) {
+      if (isAccessDenied(err)) throw err;
+      return '';
+    }).then(function (current) {
+      var text = buildConfig(current, loc);
+      return ubus('file', 'write', { path: CONFIG_PATH, data: text }).then(function () { return text; });
+    }).then(function (text) {
+      configText = text;
+      showCurrent(parseConfig(text));
+      $('results').innerHTML = '';
+      setStatus('search-status', '');
+      setStatus('save-status', 'Saved. The poster will switch to this location at its next update, within about an hour.', 'ok');
+    }).catch(function (err) {
+      if (isAccessDenied(err)) { showLogin(); setStatus('login-status', 'Your login expired. Log in again, then save.', 'error'); return; }
+      setStatus('save-status', 'Couldn’t save the location. Make sure you’re still connected to the poster, then try again.', 'error');
+    }).then(function () { $('save').disabled = false; });
+  });
+
+  loadConfig().catch(function (err) {
+    if (isAccessDenied(err)) { showLogin(); return; }
+    showLogin();
+    setStatus('login-status', 'Couldn’t reach the poster. Make sure you’re connected to its WiFi.', 'error');
+  });
+})();
+</script>
+</body>
+</html>
