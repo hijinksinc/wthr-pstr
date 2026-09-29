@@ -13,7 +13,7 @@ It should take about 10 minutes start to finish to get your poster updated. Just
 - A Mac, or a Windows 10 or 11 PC
 - Your poster's password: the one you use to log in on the poster's setup page (I'm unsure if they differ, but mine was weather6124)
 
-**Note: ** the documentation below lists the address weatherposter.local or weatherposter, if you have issues connecting, you can also try the default IP of the Omega2+ which is 192.168.1.3
+**Note:** the documentation below lists the address weatherposter.local or weatherposter, if you have issues connecting, you can also try the default IP of the Omega2+ which is 192.168.1.3
 ### 1. Connect to your poster
 
 1. On your computer, join the WiFi network called **WeatherPoster**. This is your poster's own network. If it asks for a password, use the WiFi password from your poster's setup instructions.
